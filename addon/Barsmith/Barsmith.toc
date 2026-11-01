@@ -1,0 +1,9 @@
+## Interface: 16001, 11509
+## Title: Barsmith Importer
+## Notes: Applies a plan from the Barsmith page: creates macros, fills action bar slots and sets keybinds. /barsmith
+## Author: Ruben
+## Version: @project-version@
+## SavedVariables: BarsmithDB
+## X-Curse-Project-ID: 1778365
+
+Barsmith.lua

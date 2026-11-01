@@ -1,0 +1,41 @@
+# Publishes index.html and a zip of the addon to GitHub Pages on every push to main.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe needs the tags for the addon version
+      - name: Build site
+        run: |
+          mkdir -p _site build
+          cp -r index.html layout-editor.js LICENSE backdrops _site/
+          cp -r addon/Barsmith build/
+          cp LICENSE build/Barsmith/
+          sed -i "s/@project-version@/$(git describe --tags --always)/" build/Barsmith/Barsmith.toc
+          (cd build && zip -qr ../_site/Barsmith.zip Barsmith)
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
