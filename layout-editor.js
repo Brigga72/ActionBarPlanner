@@ -13,14 +13,17 @@
   document.head.append(css);
   const tools = document.createElement('div');
   tools.className = 'layout-tools';
-  tools.innerHTML = `<button type="button" class="btn" id="layoutToggle">Edit layout</button><button type="button" class="btn" id="layoutReset">Reset layout</button><label>Bar <select id="layoutBar"></select></label><label>Rows <select id="layoutRows"><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>12</option></select></label><span>Drag a bar’s handle to move; drag its gold corner to resize. Layout saves per plan, in this browser only.</span>`;
+  tools.innerHTML = `<button type="button" class="btn" id="layoutToggle">Edit layout</button><button type="button" class="btn" id="layoutReset">Reset layout</button><label>Bar <select id="layoutBar"></select></label><label>Buttons <select id="layoutButtons"></select></label><label>Rows <select id="layoutRows"></select></label><label>Scale <select id="layoutScale"></select></label><span>Drag a bar’s handle to move; drag its gold corner to resize. Layout saves per plan, in this browser only. Hidden buttons keep their spells and bindings.</span>`;
   $('screen').before(tools);
   const bars = () => [...$('screen').querySelectorAll('.bar')];
   const key = el => el.dataset.bar || (el.getAttribute('aria-label') === 'Pet bar' ? 'pet' : 'stance');
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   function place(el, config) {
     const sc = $('screen');
-    const count = el.querySelectorAll('.ab').length;
+    const cells = [...el.querySelectorAll('.ab')];
+    const count = clamp(config.buttons || cells.length, 1, cells.length);
+    cells.forEach((cell, i) => { cell.style.display = i < count ? '' : 'none'; });
+    config.baseSize ||= config.size || 36;
     const rows = clamp(config.rows || 1, 1, count);
     const columns = Math.ceil(count / rows);
     const size = Math.min(config.size || 36, Math.max(8, (sc.clientWidth - 12 - (columns - 1) * 3) / columns), Math.max(8, (sc.clientHeight - 35 - (rows - 1) * 3) / rows));
@@ -36,7 +39,8 @@
       const id = key(el);
       if (!P().layout[id]) {
         const r = el.getBoundingClientRect();
-        P().layout[id] = {x:(r.left-rect.left)/sc.clientWidth,y:(r.top-rect.top)/sc.clientHeight,size:el.querySelector('.ab').getBoundingClientRect().width,rows:el.classList.contains('vertical') ? 12 : 1};
+        const size = el.querySelector('.ab').getBoundingClientRect().width;
+        P().layout[id] = {x:(r.left-rect.left)/sc.clientWidth,y:(r.top-rect.top)/sc.clientHeight,size,baseSize:size,buttons:el.querySelectorAll('.ab').length,rows:el.classList.contains('vertical') ? 12 : 1};
       }
     }
     save();
@@ -61,19 +65,19 @@
             control.setPointerCapture(e.pointerId);
             const move = event => {
               const c = P().layout[id];
-              if (resizing) c.size = clamp(start.size + Math.max(event.clientX-x,event.clientY-y) / Math.max(1,Math.ceil(el.querySelectorAll('.ab').length / c.rows)), 12, 80);
+              if (resizing) c.size = clamp(start.size + (event.clientX-x) / Math.max(1,Math.ceil((c.buttons || el.querySelectorAll('.ab').length) / c.rows)), c.baseSize * .25, c.baseSize * 1.5);
               else { c.x = clamp(start.x+(event.clientX-x)/sc.clientWidth,0,1); c.y = clamp(start.y+(event.clientY-y)/sc.clientHeight,0,1); }
               place(el,c);
             };
-            const end = () => {control.removeEventListener('pointermove',move);control.removeEventListener('pointerup',end);control.removeEventListener('pointercancel',end);save();};
+            const end = () => {control.removeEventListener('pointermove',move);control.removeEventListener('pointerup',end);control.removeEventListener('pointercancel',end);syncControls();save();};
             control.addEventListener('pointermove',move);control.addEventListener('pointerup',end);control.addEventListener('pointercancel',end);
           });
           control.addEventListener('keydown', e => {
             if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return;
             e.preventDefault();e.stopPropagation();const c=P().layout[id];
-            if(resizing)c.size=clamp(c.size+(['ArrowRight','ArrowDown'].includes(e.key)?1:-1),12,80);
+            if(resizing)c.size=clamp(c.size+(['ArrowRight','ArrowDown'].includes(e.key)?1:-1),c.baseSize*.25,c.baseSize*1.5);
             else {c.x=clamp(c.x+(e.key==='ArrowRight'?4:e.key==='ArrowLeft'?-4:0)/sc.clientWidth,0,1);c.y=clamp(c.y+(e.key==='ArrowDown'?4:e.key==='ArrowUp'?-4:0)/sc.clientHeight,0,1);}
-            place(el,c);save();
+            place(el,c);syncControls();save();
           });
         }
       }
@@ -81,15 +85,32 @@
     const selected=$('layoutBar').value;
     $('layoutBar').replaceChildren(...bars().map(el=>new Option(key(el).replace('b','Bar '),key(el))));
     if([...$('layoutBar').options].some(o=>o.value===selected))$('layoutBar').value=selected;
-    $('layoutRows').value=String((P().layout||{})[$('layoutBar').value]?.rows||1);
-    $('layoutBar').disabled=$('layoutRows').disabled=!editing;
+    syncControls();
+    for (const id of ['layoutBar','layoutButtons','layoutRows','layoutScale']) $(id).disabled=!editing;
     $('layoutToggle').textContent=editing?'Done editing':'Edit layout';
     $('layoutToggle').setAttribute('aria-pressed',String(editing));
   }
   renderScreen = function(){originalRender();enhance();};
   $('layoutToggle').onclick=()=>{if(kbMode)setKb(false);editing=!editing;renderScreen();};
   $('layoutReset').onclick=()=>{delete P().layout;renderScreen();save();};
-  $('layoutBar').onchange=()=>{$('layoutRows').value=String(P().layout[$('layoutBar').value]?.rows||1);};
+  function syncControls() {
+    const el = bars().find(el => key(el) === $('layoutBar').value);
+    if (!el) return;
+    const total = el.querySelectorAll('.ab').length;
+    const c = (P().layout || {})[$('layoutBar').value];
+    const count = c?.buttons || total;
+    $('layoutButtons').replaceChildren(...Array.from({length:total},(_,i)=>new Option(String(i+1),String(i+1))));
+    $('layoutButtons').value=String(count);
+    $('layoutRows').replaceChildren(...Array.from({length:count},(_,i)=>new Option(String(i+1),String(i+1))));
+    $('layoutRows').value=String(Math.min(c?.rows || 1,count));
+    const scale = c ? Math.round(100 * c.size / (c.baseSize || c.size)) : 100;
+    const scales = [...new Set([...Array.from({length:26},(_,i)=>25+i*5),scale])].sort((a,b)=>a-b);
+    $('layoutScale').replaceChildren(...scales.map(n=>new Option(n+'%',String(n))));
+    $('layoutScale').value=String(scale);
+  }
+  $('layoutBar').onchange=syncControls;
+  $('layoutButtons').onchange=()=>{const c=P().layout[$('layoutBar').value];c.buttons=Number($('layoutButtons').value);c.rows=Math.min(c.rows,c.buttons);renderScreen();save();};
+  $('layoutScale').onchange=()=>{const c=P().layout[$('layoutBar').value];c.baseSize ||= c.size;c.size=c.baseSize*Number($('layoutScale').value)/100;renderScreen();save();};
   $('layoutRows').onchange=()=>{P().layout[$('layoutBar').value].rows=Number($('layoutRows').value);renderScreen();save();};
   new ResizeObserver(()=>{for(const el of bars()){const c=(P().layout||{})[key(el)];if(c)place(el,c);}}).observe($('screen'));
   renderScreen();
