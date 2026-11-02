@@ -923,6 +923,16 @@ const escField = (s) => String(s ?? "").replace(/\\/g, "\\\\").replace(/\t/g, "\
 const unescField = (s) => String(s ?? "").replace(/\\(.)/g, (m, c) => (c === "n" ? "\n" : c === "t" ? "\t" : c === "\\" ? "\\" : m));
 function toB64(text) { let bin = ""; for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b); return btoa(bin); }
 function fromB64(b64) { const bin = atob(b64.replace(/[^A-Za-z0-9+/]/g, "")); return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))); }
+// Optional planner-only records; older BP1 readers ignore unknown records.
+function validLayout(key, c) {
+  const total = key === "pet" ? 10 : 12;
+  return (BARS.some(b => b.key === key) || key === "pet" || key === "stance") &&
+    c && [c.x, c.y, c.size, c.baseSize, c.buttons, c.rows].every(Number.isFinite) &&
+    c.x >= 0 && c.x <= 1 && c.y >= 0 && c.y <= 1 &&
+    c.size >= 1 && c.size <= 512 && c.baseSize >= 1 && c.baseSize <= 512 &&
+    Number.isInteger(c.buttons) && c.buttons >= 1 && c.buttons <= total &&
+    Number.isInteger(c.rows) && c.rows >= 1 && c.rows <= c.buttons;
+}
 function serialize() {
   const p = P();
   const lines = ["BARPLAN\t1", "CLASS\t" + app.cls, "RACE\t" + escField(app.race)];
@@ -933,6 +943,11 @@ function serialize() {
     if (s.kind === "clear" || s.value) lines.push(["SLOT", slot, s.kind, escField(s.kind === "clear" ? "" : s.value)].join("\t"));
   });
   for (const [cmd, key] of Object.entries(p.binds)) if (key) lines.push(["BIND", key, cmd].join("\t"));
+  lines.push(["SHOWN", ...BARS.filter(b => p.shown.includes(b.key)).map(b => b.key)].join("\t"));
+  for (const [key, c] of Object.entries(p.layout || {})) {
+    const config = { ...c, baseSize: c.baseSize || c.size };
+    if (validLayout(key, config)) lines.push(["LAYOUT", key, config.x, config.y, config.size, config.baseSize, config.buttons, config.rows].join("\t"));
+  }
   return "BP1:" + toB64(lines.join("\n"));
 }
 function parse(text) {
@@ -941,10 +956,16 @@ function parse(text) {
   let raw;
   try { raw = fromB64(text.slice(4)); } catch (e) { throw new Error("The plan string is damaged. Copy it again."); }
   const p = { name: "", shown: ["b1"], slots: {}, macros: [], binds: {} };
-  let version = null, cls = null, race = null;
+  let version = null, cls = null, race = null, shown = null;
   for (const line of raw.split("\n")) {
     const f = line.replace(/\r$/, "").split("\t");
-    if (f[0] === "BARPLAN") version = +f[1];
+    if (f[0] === "SHOWN") shown = [...new Set(f.slice(1).filter(key => BARS.some(b => b.key === key)))];
+    else if (f[0] === "LAYOUT" && f.length === 8 && f.slice(2).every(v => v.trim() !== "")) {
+      const [x, y, size, baseSize, buttons, rows] = f.slice(2).map(Number);
+      const c = { x, y, size, baseSize, buttons, rows };
+      if (validLayout(f[1], c)) (p.layout ||= {})[f[1]] = c;
+    }
+    else if (f[0] === "BARPLAN") version = +f[1];
     else if (f[0] === "CLASS") cls = f[1];
     else if (f[0] === "RACE") race = unescField(f[1]);
     else if (f[0] === "NAME") p.name = unescField(f[1]);
@@ -955,6 +976,7 @@ function parse(text) {
   if (!version) throw new Error("The plan string is damaged. Copy it again.");
   if (version > 1) throw new Error("This plan was made by a newer planner.");
   for (const b of BARS) for (let i = 0; i < 12; i++) if (p.slots[b.first + i] && !p.shown.includes(b.key)) p.shown.push(b.key);
+  if (shown !== null) p.shown = shown; // Legacy strings still infer bars from slots.
   return { cls: CLASS_NAME[cls] ? cls : null, race: RACES.includes(race) ? race : null, plan: p };
 }
 function warnings() {
@@ -1418,5 +1440,5 @@ const barsHeight = new ResizeObserver(() => {
 barsHeight.observe($("screen"));
 barsHeight.observe(screenCol);
 </script>
-<script src="layout-editor.js?v=2"></script></body>
+<script src="layout-editor.js?v=3"></script></body>
 </html>

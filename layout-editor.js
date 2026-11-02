@@ -13,7 +13,7 @@
   document.head.append(css);
   const tools = document.createElement('div');
   tools.className = 'layout-tools';
-  tools.innerHTML = `<button type="button" class="btn" id="layoutToggle">Edit layout</button><button type="button" class="btn" id="layoutReset">Reset layout</button><label>Bar <select id="layoutBar"></select></label><label>Buttons <select id="layoutButtons"></select></label><label>Rows <select id="layoutRows"></select></label><label>Scale <select id="layoutScale"></select></label><span>Drag a bar’s handle to move; drag its gold corner to resize. Layout saves per plan, in this browser only. Hidden buttons keep their spells and bindings.</span>`;
+  tools.innerHTML = `<button type="button" class="btn" id="layoutToggle">Edit layout</button><button type="button" class="btn" id="layoutReset">Reset layout</button><label>Bar <select id="layoutBar"></select></label><label>Buttons <select id="layoutButtons"></select></label><label>Rows <select id="layoutRows"></select></label><label>Scale <select id="layoutScale"></select></label><span>Drag a bar’s handle to move; drag its gold corner to resize. Layout saves per plan and in plan strings (planner only; not applied in game). Hidden buttons keep their spells and bindings.</span>`;
   $('screen').before(tools);
   const bars = () => [...$('screen').querySelectorAll('.bar')];
   const key = el => el.dataset.bar || (el.getAttribute('aria-label') === 'Pet bar' ? 'pet' : 'stance');
@@ -43,7 +43,7 @@
         P().layout[id] = {x:(r.left-rect.left)/sc.clientWidth,y:(r.top-rect.top)/sc.clientHeight,size,baseSize:size,buttons:el.querySelectorAll('.ab').length,rows:el.classList.contains('vertical') ? 12 : 1};
       }
     }
-    save();
+    renderExport();save();
   }
   function enhance() {
     const sc = $('screen');
@@ -69,7 +69,7 @@
               else { c.x = clamp(start.x+(event.clientX-x)/sc.clientWidth,0,1); c.y = clamp(start.y+(event.clientY-y)/sc.clientHeight,0,1); }
               place(el,c);
             };
-            const end = () => {control.removeEventListener('pointermove',move);control.removeEventListener('pointerup',end);control.removeEventListener('pointercancel',end);syncControls();save();};
+            const end = () => {control.removeEventListener('pointermove',move);control.removeEventListener('pointerup',end);control.removeEventListener('pointercancel',end);syncControls();renderExport();save();};
             control.addEventListener('pointermove',move);control.addEventListener('pointerup',end);control.addEventListener('pointercancel',end);
           });
           control.addEventListener('keydown', e => {
@@ -77,7 +77,7 @@
             e.preventDefault();e.stopPropagation();const c=P().layout[id];
             if(resizing)c.size=clamp(c.size+(['ArrowRight','ArrowDown'].includes(e.key)?1:-1),c.baseSize*.25,c.baseSize*1.5);
             else {c.x=clamp(c.x+(e.key==='ArrowRight'?4:e.key==='ArrowLeft'?-4:0)/sc.clientWidth,0,1);c.y=clamp(c.y+(e.key==='ArrowDown'?4:e.key==='ArrowUp'?-4:0)/sc.clientHeight,0,1);}
-            place(el,c);syncControls();save();
+            place(el,c);syncControls();renderExport();save();
           });
         }
       }
@@ -92,7 +92,7 @@
   }
   renderScreen = function(){originalRender();enhance();};
   $('layoutToggle').onclick=()=>{if(kbMode)setKb(false);editing=!editing;renderScreen();};
-  $('layoutReset').onclick=()=>{delete P().layout;renderScreen();save();};
+  $('layoutReset').onclick=()=>{delete P().layout;renderScreen();renderExport();save();};
   function syncControls() {
     const el = bars().find(el => key(el) === $('layoutBar').value);
     if (!el) return;
@@ -109,9 +109,9 @@
     $('layoutScale').value=String(scale);
   }
   $('layoutBar').onchange=syncControls;
-  $('layoutButtons').onchange=()=>{const c=P().layout[$('layoutBar').value];c.buttons=Number($('layoutButtons').value);c.rows=Math.min(c.rows,c.buttons);renderScreen();save();};
-  $('layoutScale').onchange=()=>{const c=P().layout[$('layoutBar').value];c.baseSize ||= c.size;c.size=c.baseSize*Number($('layoutScale').value)/100;renderScreen();save();};
-  $('layoutRows').onchange=()=>{P().layout[$('layoutBar').value].rows=Number($('layoutRows').value);renderScreen();save();};
+  $('layoutButtons').onchange=()=>{const c=P().layout[$('layoutBar').value];c.buttons=Number($('layoutButtons').value);c.rows=Math.min(c.rows,c.buttons);renderScreen();renderExport();save();};
+  $('layoutScale').onchange=()=>{const c=P().layout[$('layoutBar').value];c.baseSize ||= c.size;c.size=c.baseSize*Number($('layoutScale').value)/100;renderScreen();renderExport();save();};
+  $('layoutRows').onchange=()=>{P().layout[$('layoutBar').value].rows=Number($('layoutRows').value);renderScreen();renderExport();save();};
   new ResizeObserver(()=>{for(const el of bars()){const c=(P().layout||{})[key(el)];if(c)place(el,c);}}).observe($('screen'));
   renderScreen();
 })();
